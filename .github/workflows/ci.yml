@@ -46,7 +46,11 @@ jobs:
       - name: Prepare test fixtures
         run: |
           mkdir -p tests/.cache
-          curl -fsSL https://repo.maven.apache.org/maven2/org/json/json/20231013/json-20231013.jar -o tests/.cache/org-json.jar
+          jar_path=org/json/json/20231013/json-20231013.jar
+          curl -fsSL --retry 2 --retry-max-time 15 --max-time 15 \
+            "https://repo.maven.apache.org/maven2/$jar_path" -o tests/.cache/org-json.jar ||
+          curl -fsSL --retry 2 --retry-max-time 15 --max-time 15 \
+            "https://maven-central.storage-download.googleapis.com/maven2/$jar_path" -o tests/.cache/org-json.jar
           echo "0f18192df289114e17aa1a0d0a7f8372cc9f5c7e4f7e39adcf8906fe714fa7d3  tests/.cache/org-json.jar" | sha256sum --check
           tomotoru-fetch-base --extract-sxr
           python -m tools.assets.sxr_extract
