@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+build/
+!/tools/build/
+
+# Generated artifacts & caches
+.cache/
+dist/
+tests/.cache/
+*.idsig
+
+# Reverse-engineering outputs
+/extracted/
+/decompiled/
+/extracted_strings.json
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tomotoru-tools"
+version = "0.4.0"
+description = "Reverse engineering toolkit and APK build pipeline for Tomotoru (Sanrio Characters)"
+requires-python = ">=3.10"
+dependencies = [
+    "lz4>=4.0",
+]
+
+[project.urls]
+Repository = "https://github.com/bringbacktomotoru/tools"
+Documentation = "https://github.com/bringbacktomotoru/tools#readme"
+Changelog = "https://github.com/bringbacktomotoru/tools/releases"
+
+[project.optional-dependencies]
+sxr = ["lz4>=4.0"]
+dev = ["pytest>=8.0", "pycryptodome>=3.19"]
+
+[project.scripts]
+tomotoru-build = "tools.build.build_apk:main"
+tomotoru-fetch-base = "tools.assets.fetch_base:main"
+
+[tool.setuptools.packages.find]
+include = ["tools*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

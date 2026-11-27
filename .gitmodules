@@ -1,0 +1,3 @@
+[submodule "tomoffline"]
+	path = tomoffline
+	url = https://github.com/bringbacktomotoru/offline.git
