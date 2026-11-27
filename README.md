@@ -106,7 +106,7 @@ curl -fsSL https://repo.maven.apache.org/maven2/org/json/json/20231013/json-2023
 python -m pytest -v
 ```
 
-The server's optional Python interoperability test reads `tests/sakana_wire.py`. With the tools virtual environment and `.[dev]` installed, run it from the server checkout with `TOMOTORU_GAME_DIR=../tools npm test`.
+The server's optional Python interoperability test reads `tests/sakana_wire.py`. After installing `.[dev]` in the tools virtual environment, run `npm test` from the server checkout. Set `TOMOTORU_TOOLS_DIR` if the tools checkout is somewhere other than `../tools`.
 
 ## APK releases and reproducibility
 
