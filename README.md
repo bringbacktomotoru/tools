@@ -4,6 +4,8 @@ Build Android APKs and inspect the game data of **Tomotoru** (*Hello Kitty Happy
 
 [Download game APKs][apk-releases] · [Browse preserved game files][game] · [Technical wiki][wiki]
 
+For ready-to-install APKs, use [Tomotoru Builds][apk-releases]. The **Offline APK** has a server built into the app, needs no Internet or separate server, and saves progress on your device. The **official Online APK** connects over the Internet to the server run by this project's maintainer. That server must be available to play, and it stores your progress.
+
 ## Quick start
 
 Use Python 3.10 or newer. For patched APKs, install `zipalign`, `apksigner`, and a JDK (CI uses JDK 17). Offline builds also need an Android platform JAR, `dalvik-exchange` or `dx`, and `smali` and `baksmali` on `PATH`. On Ubuntu 24.04:
@@ -27,7 +29,7 @@ For older checkouts or after pulling an updated pin, run `git submodule update -
 
 ### Build APKs
 
-The builder downloads the unmodified Android v1.0.4 APK from the [`v0.0.1` base-assets release][base-release] and verifies its SHA-256. A game source checkout is unnecessary. Use `--apk PATH` to supply an existing base APK. Outputs default to `dist/`.
+The builder downloads the unmodified Android v1.0.4 APK from the [`v0.0.1` base-assets release][base-release] and verifies its SHA-256. The original APK is neither revival edition. A game source checkout is unnecessary. Use `--apk PATH` to supply an existing base APK. Outputs default to `dist/`.
 
 ```bash
 tomotoru-build --mode original
@@ -40,10 +42,10 @@ tomotoru-build --mode online-test
 | Mode | Behavior |
 | --- | --- |
 | `original` | Copies the base APK byte for byte. |
-| `offline` | Starts the embedded Java server at `127.0.0.1:18080`. |
+| `offline` | Starts the embedded Java server at `127.0.0.1:18080` and saves progress on the device. |
 | `offline-test` | Adds debug telemetry and test settings to the offline APK. |
-| `online` | Connects to `--url` or `ONLINE_SERVER_URL`. |
-| `online-test` | Enables debug telemetry and defaults to `http://127.0.0.1:18880`. |
+| `online` | Builds a custom APK for the server you set with `--url` or `ONLINE_SERVER_URL`. Progress is saved on that server. |
+| `online-test` | Builds a test APK with debug telemetry. It defaults to `http://127.0.0.1:18880` for local testing. |
 
 All four patched modes include the runtime compatibility and dual-stack DNS fixes. They use temporary debug signing keys by default. To install updates over a previous patched build, sign both with the same keystore (`--keystore`, `SIGNING_KS_PASS`, `SIGNING_KEY_PASS`, `SIGNING_KEY_ALIAS`).
 
