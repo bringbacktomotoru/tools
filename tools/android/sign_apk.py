@@ -21,6 +21,12 @@ def find_sdk_tool(tool_name: str) -> str:
                     return str(candidate)
 
     found = shutil.which(tool_name)
+    if not found and os.name == "nt" and tool_name == "keytool":
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            candidate = Path(java_home) / "bin" / "keytool.exe"
+            if candidate.is_file():
+                return str(candidate)
     if found:
         return found
 
@@ -58,7 +64,7 @@ def find_sdk_tool(tool_name: str) -> str:
 def _run(args: list[str], desc: str = "") -> str:
     if desc:
         print(f"  > {desc}")
-    if os.name == "nt" and args[0].lower().endswith(".bat"):
+    if os.name == "nt" and args[0].lower().endswith((".bat", ".cmd")):
         # Windows cannot launch batch files directly via CreateProcess.
         command = subprocess.list2cmdline(args)
         args = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", command]
