@@ -29,6 +29,28 @@ For older checkouts or after pulling an updated pin, run `git submodule update -
 
 `tomoffline` is a submodule pinned to an exact commit, so the tools build uses that revision reproducibly; it does not automatically follow the latest offline-server commit. To test offline-server changes before pinning them, check out the `offline` repository separately and temporarily point the local submodule worktree at the desired revision (or use a local branch). Once verified, update the submodule pointer in this repository and commit that pointer. Do not commit generated changes inside the submodule as tools changes.
 
+### Windows offline-test builds
+
+The Windows offline builder uses `d8` from the Android SDK (the Linux builder continues to use `dx`). Set `ANDROID_HOME` to an SDK with `build-tools` and a platform `android.jar`, and `JAVA_HOME` to JDK 17. Smali and baksmali can be run from Maven Central's `org.smali` 2.5.2 artifacts and their runtime dependencies; set `TOMOTORU_SMALI_JAR` to a Java classpath such as `C:\tools\smali\*`. The tested Maven Central JAR set was `org.smali:{smali,baksmali,dexlib2,util}:2.5.2`, `org.antlr:{antlr,antlr-runtime}:3.5.2`, `org.antlr:stringtemplate:3.2.1`, `com.beust:jcommander:1.64`, `com.google.guava:guava:27.1-android`, `com.google.guava:failureaccess:1.0.1`, `com.google.code.findbugs:jsr305:3.0.2`, `com.google.errorprone:error_prone_annotations:2.1.3`, `com.google.j2objc:j2objc-annotations:1.1`, and `com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava`. Obtain the SDK build-tools/platform and JDK from their official Android and JDK distributions. Set `TOMOTORU_ANDROID_JAR` to select a specific platform JAR instead of SDK auto-detection.
+
+To build against a separate offline-server checkout without changing the `tomoffline` submodule, set `TOMOTORU_OFFLINE_SOURCE` to either that checkout's root or its `src/main/java/com/tomotoru/offline` directory. For example, in PowerShell:
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:JAVA_HOME = "C:\path\to\jdk-17"
+$env:PATH = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\build-tools\android-15;$env:PATH"
+$env:TOMOTORU_ANDROID_JAR = "$env:ANDROID_HOME\platforms\android-35\android.jar"
+$env:TOMOTORU_SMALI_JAR = "C:\tools\smali\*"
+$env:TOMOTORU_OFFLINE_SOURCE = "C:\path\to\tomoffline-integration"
+python -m tools.build.build_apk --mode offline-test --apk C:\path\to\verified-original.apk `
+    -o dist\tomotoru-offline-gameplay-test.apk
+& "$env:ANDROID_HOME\build-tools\android-15\apksigner.bat" verify --verbose `
+    dist\tomotoru-offline-gameplay-test.apk
+Get-FileHash dist\tomotoru-offline-gameplay-test.apk -Algorithm SHA256
+```
+
+`TOMOTORU_OFFLINE_SOURCE` only selects Java inputs; the builder does not write to that checkout.
+
 ### Build APKs
 
 The builder downloads the unmodified Android v1.0.4 APK from the [`v0.0.1` base-assets release][base-release] and verifies its SHA-256. The original APK is neither revival edition. A game source checkout is unnecessary. Use `--apk PATH` to supply an existing base APK. Outputs default to `dist/`.

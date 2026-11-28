@@ -12,7 +12,21 @@ from pathlib import Path
 
 def find_sdk_tool(tool_name: str) -> str:
     """Locate an Android build-tools executable (zipalign, apksigner) or JDK tool (keytool)."""
+    if tool_name == "keytool":
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            for ext in (".exe", ".bat", "") if os.name == "nt" else ("",):
+                candidate = Path(java_home) / "bin" / f"keytool{ext}"
+                if candidate.is_file():
+                    return str(candidate)
+
     found = shutil.which(tool_name)
+    if not found and os.name == "nt" and tool_name == "keytool":
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            candidate = Path(java_home) / "bin" / "keytool.exe"
+            if candidate.is_file():
+                return str(candidate)
     if found:
         return found
 
@@ -21,6 +35,8 @@ def find_sdk_tool(tool_name: str) -> str:
         sdk = os.environ.get(env_var)
         if sdk:
             candidates.append(Path(sdk))
+    if tool_name == "keytool" and os.environ.get("JAVA_HOME"):
+        candidates.append(Path(os.environ["JAVA_HOME"]))
 
     if os.name == "nt":
         local_app = os.environ.get("LOCALAPPDATA")
@@ -48,6 +64,10 @@ def find_sdk_tool(tool_name: str) -> str:
 def _run(args: list[str], desc: str = "") -> str:
     if desc:
         print(f"  > {desc}")
+    if os.name == "nt" and args[0].lower().endswith((".bat", ".cmd")):
+        # Windows cannot launch batch files directly via CreateProcess.
+        command = subprocess.list2cmdline(args)
+        args = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", command]
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
         err = result.stderr.strip() or result.stdout.strip()

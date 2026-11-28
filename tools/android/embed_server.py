@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 ANDROID_SERVER_SRC = ROOT / "tomoffline" / "src" / "main" / "java" / "com" / "tomotoru" / "offline"
+OFFLINE_SOURCE_RELATIVE = Path("src/main/java/com/tomotoru/offline")
 
 ANDROID_JAR_CANDIDATES = (
     Path("/usr/lib/android-sdk/platforms/android-23/android.jar"),
@@ -27,6 +28,9 @@ ANDROID_JAR_CANDIDATES = (
 
 
 def _find_android_jar() -> Path:
+    configured = os.environ.get("TOMOTORU_ANDROID_JAR")
+    if configured and Path(configured).is_file():
+        return Path(configured)
     for env_var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         sdk = os.environ.get(env_var)
         if sdk:
@@ -54,8 +58,42 @@ def _find_dx() -> list[str]:
     raise FileNotFoundError("Could not find 'dalvik-exchange' or 'dx'. Install dalvik-exchange.")
 
 
+def _find_smali_command(name: str) -> list[str]:
+    found = shutil.which(name)
+    if found:
+        return [found]
+    jar = os.environ.get("TOMOTORU_SMALI_JAR")
+    if os.name == "nt" and jar and (Path(jar).is_file() or (jar.endswith("*") and Path(jar[:-1]).is_dir())):
+        java = _find_tool("java")
+        main = f"org.jf.{name}.Main"
+        return [java, "-cp", jar, main]
+    raise FileNotFoundError(f"Could not find '{name}' on PATH or TOMOTORU_SMALI_JAR.")
+
+
+def _find_d8_command() -> list[str] | None:
+    if os.name != "nt":
+        return None
+    sdk = next(
+        (Path(os.environ[var]) for var in ("ANDROID_HOME", "ANDROID_SDK_ROOT") if os.environ.get(var)),
+        None,
+    )
+    candidates = [Path(os.environ["TOMOTORU_D8_JAR"])] if os.environ.get("TOMOTORU_D8_JAR") else []
+    if sdk:
+        candidates.extend(sorted((sdk / "build-tools").glob("*/lib/d8.jar"), reverse=True))
+    for jar in candidates:
+        if jar.is_file():
+            return [_find_tool("java"), "-cp", str(jar), "com.android.tools.r8.D8"]
+    return None
+
+
 def _find_tool(name: str) -> str:
     found = shutil.which(name)
+    if not found and os.name == "nt":
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            candidate = Path(java_home) / "bin" / f"{name}.exe"
+            if candidate.is_file():
+                found = str(candidate)
     if not found:
         raise FileNotFoundError(f"Could not find '{name}' on PATH.")
     return found
@@ -70,12 +108,19 @@ def _run(cmd: list[str], desc: str) -> None:
 
 
 def offline_java_sources() -> list[Path]:
-    if not (ANDROID_SERVER_SRC / "OfflineServer.java").is_file():
+    source_dir = ANDROID_SERVER_SRC
+    configured_source = os.environ.get("TOMOTORU_OFFLINE_SOURCE")
+    if configured_source:
+        source_dir = Path(configured_source)
+        if not (source_dir / "OfflineServer.java").is_file():
+            source_dir = source_dir / OFFLINE_SOURCE_RELATIVE
+    if not (source_dir / "OfflineServer.java").is_file():
         raise FileNotFoundError(
-            f"tomoffline sources are missing at {ANDROID_SERVER_SRC}. "
-            "From the tools checkout, run: git submodule update --init -- tomoffline"
+            f"tomoffline sources are missing at {source_dir}. Set "
+            "TOMOTORU_OFFLINE_SOURCE to the checkout root or Java package directory, "
+            "or run: git submodule update --init -- tomoffline"
         )
-    return sorted(ANDROID_SERVER_SRC.glob("*.java"))
+    return sorted(source_dir.glob("*.java"))
 
 
 def patch_sakana_application_smali(smali_path: Path) -> None:
@@ -180,9 +225,12 @@ def inject_embedded_server_into_dex(orig_dex_bytes: bytes) -> bytes:
     """Compile com.tomotoru.offline and merge it into the APK's classes.dex."""
     java_files = [str(p) for p in offline_java_sources() if p.name != "StandaloneMain.java"]
     javac_bin = _find_tool("javac")
-    smali_bin = _find_tool("smali")
-    baksmali_bin = _find_tool("baksmali")
-    dx_cmd = _find_dx()
+    smali_cmd = _find_smali_command("smali")
+    baksmali_cmd = _find_smali_command("baksmali")
+    dx_cmd = _find_dx() if os.name != "nt" else None
+    d8_cmd = _find_d8_command()
+    if dx_cmd is None and d8_cmd is None:
+        raise FileNotFoundError("Could not find d8.jar in the Android SDK; set ANDROID_HOME.")
     android_jar = _find_android_jar()
 
     work_dir = Path(tempfile.mkdtemp(prefix="tomotoru_dex_"))
@@ -213,19 +261,27 @@ def inject_embedded_server_into_dex(orig_dex_bytes: bytes) -> bytes:
         )
 
         # 2. Convert .class -> server.dex
-        _run(
-            [*dx_cmd, "--dex", f"--output={server_dex}", str(classes_dir)],
-            "Converting embedded server classes to DEX",
-        )
+        if dx_cmd:
+            _run(
+                [*dx_cmd, "--dex", f"--output={server_dex}", str(classes_dir)],
+                "Converting embedded server classes to DEX with dx",
+            )
+        else:
+            dex_dir = work_dir / "d8"
+            dex_dir.mkdir()
+            class_files = [str(p) for p in sorted(classes_dir.rglob("*.class"))]
+            _run([*d8_cmd, "--min-api", "23", "--output", str(dex_dir), *class_files],
+                 "Converting embedded server classes to DEX with d8")
+            shutil.copy2(dex_dir / "classes.dex", server_dex)
 
         # 3. Disassemble server.dex and original classes.dex
         orig_dex.write_bytes(orig_dex_bytes)
         _run(
-            [baksmali_bin, "d", str(server_dex), "-o", str(server_smali_dir)],
+            [*baksmali_cmd, "d", str(server_dex), "-o", str(server_smali_dir)],
             "Disassembling embedded server DEX",
         )
         _run(
-            [baksmali_bin, "d", str(orig_dex), "-o", str(orig_smali_dir)],
+            [*baksmali_cmd, "d", str(orig_dex), "-o", str(orig_smali_dir)],
             "Disassembling original APK classes.dex",
         )
 
@@ -250,7 +306,7 @@ def inject_embedded_server_into_dex(orig_dex_bytes: bytes) -> bytes:
 
         # 6. Reassemble merged classes.dex
         _run(
-            [smali_bin, "a", str(orig_smali_dir), "-o", str(out_dex)],
+            [*smali_cmd, "a", str(orig_smali_dir), "-o", str(out_dex)],
             "Reassembling patched classes.dex",
         )
         return out_dex.read_bytes()
