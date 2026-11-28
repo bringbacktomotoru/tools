@@ -27,6 +27,8 @@ python -m pip install -e .
 
 For older checkouts or after pulling an updated pin, run `git submodule update --init -- tomoffline`.
 
+`tomoffline` is a submodule pinned to an exact commit, so the tools build uses that revision reproducibly; it does not automatically follow the latest offline-server commit. To test offline-server changes before pinning them, check out the `offline` repository separately and temporarily point the local submodule worktree at the desired revision (or use a local branch). Once verified, update the submodule pointer in this repository and commit that pointer. Do not commit generated changes inside the submodule as tools changes.
+
 ### Build APKs
 
 The builder downloads the unmodified Android v1.0.4 APK from the [`v0.0.1` base-assets release][base-release] and verifies its SHA-256. The original APK is neither revival edition. A game source checkout is unnecessary. Use `--apk PATH` to supply an existing base APK. Outputs default to `dist/`.
@@ -113,6 +115,8 @@ The server's optional Python interoperability test reads `tests/sakana_wire.py`.
 ## APK releases and reproducibility
 
 Tools tags version the Python tooling. [Tomotoru Builds][builds] owns the workflows, original release assets, and distributable APKs. Tools CI builds APKs to verify the CLI and runs tests against the resulting files.
+
+After a successful CI run for a push to `main`, this repository sends the `upstream-changed` `repository_dispatch` event to Tomotoru Builds. The payload contains `repo` (this repository's full `owner/name`) and `sha` (the tested commit). Configure the `BUILDS_DISPATCH_TOKEN` Actions secret with a fine-grained token authorized to access the Builds repository and create repository dispatches. Without the secret, CI still succeeds and simply skips the notification. The destination defaults to `bringbacktomotoru/builds`; set the Actions variable `BUILDS_REPOSITORY` to `owner/name` to override it.
 
 The initial tools import came from [game v0.3.0][pre-split], where the original build entry points remain available for that historical tag. The old fetcher can use the new asset location via `--url`, or the old builder can use a verified base APK via `--apk`. To rebuild an APK published by Tomotoru Builds, use the tools revision recorded there, initialize its pinned `tomoffline` submodule, and supply the same server URL and signing key. Modified APKs need not be byte-for-byte identical across build environments or signing keys.
 
