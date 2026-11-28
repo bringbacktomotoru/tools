@@ -101,6 +101,8 @@ def patch_sxr_bundle(
     updated_sxr_meta: dict[str, tuple[int, str]] | None = None,
     debug: bool = False,
     runtime_fixes: bool = False,
+    debug_audio: bytes | None = None,
+    debug_audio_entity: str = "1",
 ) -> int:
     """Patch URL-bearing entities (and internal pkg.json in main.sxr) inside an SXR bundle."""
     base = server_url.rstrip("/")
@@ -109,6 +111,8 @@ def patch_sxr_bundle(
 
     def _patch_entity(name: str, data: bytes) -> bytes | None:
         nonlocal url_patches
+        if debug_audio is not None and name == debug_audio_entity:
+            return debug_audio
         if data[:2] == b"\xfa\xfa":
             current = data
             modified = False
@@ -216,6 +220,8 @@ def build_apk(
     ks_pass: str = "android",
     key_pass: str = "android",
     ks_alias: str = "tomotoru",
+    debug_audio_path: str | Path | None = None,
+    debug_audio_entity: str = "1",
 ) -> Path:
     """Build a Tomotoru APK according to the requested mode."""
     base_apk = Path(apk_path).resolve() if apk_path else ensure_base_apk(DEFAULT_APK_PATH)
@@ -265,6 +271,12 @@ def build_apk(
     try:
         print(f"\n[1/4] Extracting SXR assets from {base_apk.name}...")
         target_bundles = {"assets/sxr/1-011b.sxr", "assets/sxr/main.sxr", "assets/sxr/0-0111.sxr"}
+        debug_audio = None
+        if debug_audio_path is not None:
+            debug_audio = Path(debug_audio_path).read_bytes()
+            if not debug_audio.startswith(b"OggS"):
+                raise ValueError("--debug-audio must be a valid Ogg container (OggS header)")
+            target_bundles.add("assets/sxr/b-010c.sxr")
         extracted_map: dict[str, Path] = {}
         with zipfile.ZipFile(base_apk, "r") as zin:
             for member in zin.namelist():
@@ -295,9 +307,14 @@ def build_apk(
                 updated_sxr_meta=updated_meta if is_main else None,
                 debug=debug,
                 runtime_fixes=True,
+                debug_audio=debug_audio if local_path.name == "b-010c.sxr" else None,
+                debug_audio_entity=debug_audio_entity,
             )
-            if n > 0:
-                print(f"  Patched {local_path.name}: {n} URL(s)")
+            if n > 0 or (debug_audio is not None and local_path.name == "b-010c.sxr"):
+                if debug_audio is not None and local_path.name == "b-010c.sxr":
+                    print(f"  Replaced audio entity {debug_audio_entity} in {local_path.name}")
+                if n > 0:
+                    print(f"  Patched {local_path.name}: {n} URL(s)")
                 modified_files[member] = local_path
                 modified_sxr_names[local_path.name] = local_path
                 raw = local_path.read_bytes()
@@ -397,6 +414,14 @@ def main() -> None:
     parser.add_argument("--ks-pass", default=os.environ.get("SIGNING_KS_PASS", "android"))
     parser.add_argument("--key-pass", default=os.environ.get("SIGNING_KEY_PASS", "android"))
     parser.add_argument("--ks-alias", default=os.environ.get("SIGNING_KEY_ALIAS", "tomotoru"))
+    parser.add_argument(
+        "--debug-audio", type=Path, default=None,
+        help="Opt-in Ogg/Vorbis replacement for one bundled debug sound; default APK assets are unchanged",
+    )
+    parser.add_argument(
+        "--debug-audio-entity", default="1",
+        help="Numeric entity ID in assets/sxr/b-010c.sxr to replace (default: 1)",
+    )
     args = parser.parse_args()
 
     build_apk(
@@ -409,6 +434,8 @@ def main() -> None:
         ks_pass=args.ks_pass,
         key_pass=args.key_pass,
         ks_alias=args.ks_alias,
+        debug_audio_path=args.debug_audio,
+        debug_audio_entity=args.debug_audio_entity,
     )
 
 
