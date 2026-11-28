@@ -40,6 +40,20 @@ OLD_PROJ_URLS = (
     ("http://download.tomotoru.cyberstep.com/bin/bin_inspect", "/dl"),
 )
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _png_dimensions(data: bytes) -> tuple[int, int]:
+    """Read and minimally validate a PNG IHDR."""
+    if (
+        len(data) < 24
+        or data[:8] != PNG_SIGNATURE
+        or struct.unpack_from(">I", data, 8)[0] != 13
+        or data[12:16] != b"IHDR"
+    ):
+        raise ValueError("PNG replacement and target must have a valid PNG IHDR")
+    return struct.unpack_from(">II", data, 16)
+
 
 def patch_sk_strings(sk_bytes: bytes, replacements: dict[str, str]) -> tuple[bytes, int]:
     """Replace exact string entries in a .sk bytecode file without shifting indices."""
@@ -103,6 +117,8 @@ def patch_sxr_bundle(
     runtime_fixes: bool = False,
     debug_audio: bytes | None = None,
     debug_audio_entity: str = "1",
+    debug_png: bytes | None = None,
+    debug_png_entity: str = "92",
 ) -> int:
     """Patch URL-bearing entities (and internal pkg.json in main.sxr) inside an SXR bundle."""
     base = server_url.rstrip("/")
@@ -113,6 +129,13 @@ def patch_sxr_bundle(
         nonlocal url_patches
         if debug_audio is not None and name == debug_audio_entity:
             return debug_audio
+        if debug_png is not None and name == debug_png_entity:
+            if _png_dimensions(data) != _png_dimensions(debug_png):
+                raise ValueError(
+                    f"PNG replacement for entity {name} must match target dimensions "
+                    f"{_png_dimensions(data)}"
+                )
+            return debug_png
         if data[:2] == b"\xfa\xfa":
             current = data
             modified = False
@@ -222,8 +245,13 @@ def build_apk(
     ks_alias: str = "tomotoru",
     debug_audio_path: str | Path | None = None,
     debug_audio_entity: str = "1",
+    debug_png_path: str | Path | None = None,
+    debug_png_bundle: str = "1-011b",
+    debug_png_entity: str = "92",
 ) -> Path:
     """Build a Tomotoru APK according to the requested mode."""
+    if debug_png_path is not None and mode not in ("offline-test", "online-test"):
+        raise ValueError("--debug-png is only available in test modes")
     base_apk = Path(apk_path).resolve() if apk_path else ensure_base_apk(DEFAULT_APK_PATH)
     if not base_apk.exists():
         raise FileNotFoundError(f"Base APK not found: {base_apk}")
@@ -272,6 +300,11 @@ def build_apk(
         print(f"\n[1/4] Extracting SXR assets from {base_apk.name}...")
         target_bundles = {"assets/sxr/1-011b.sxr", "assets/sxr/main.sxr", "assets/sxr/0-0111.sxr"}
         debug_audio = None
+        debug_png = None
+        if debug_png_path is not None:
+            debug_png = Path(debug_png_path).read_bytes()
+            _png_dimensions(debug_png)
+            target_bundles.add(f"assets/sxr/{debug_png_bundle}.sxr")
         if debug_audio_path is not None:
             debug_audio = Path(debug_audio_path).read_bytes()
             if not debug_audio.startswith(b"OggS"):
@@ -309,10 +342,18 @@ def build_apk(
                 runtime_fixes=True,
                 debug_audio=debug_audio if local_path.name == "b-010c.sxr" else None,
                 debug_audio_entity=debug_audio_entity,
+                debug_png=debug_png if local_path.stem == debug_png_bundle else None,
+                debug_png_entity=debug_png_entity,
             )
-            if n > 0 or (debug_audio is not None and local_path.name == "b-010c.sxr"):
+            if (
+                n > 0
+                or (debug_audio is not None and local_path.name == "b-010c.sxr")
+                or (debug_png is not None and local_path.stem == debug_png_bundle)
+            ):
                 if debug_audio is not None and local_path.name == "b-010c.sxr":
                     print(f"  Replaced audio entity {debug_audio_entity} in {local_path.name}")
+                if debug_png is not None and local_path.stem == debug_png_bundle:
+                    print(f"  Replaced PNG entity {debug_png_entity} in {local_path.name}")
                 if n > 0:
                     print(f"  Patched {local_path.name}: {n} URL(s)")
                 modified_files[member] = local_path
@@ -422,6 +463,10 @@ def main() -> None:
         "--debug-audio-entity", default="1",
         help="Numeric entity ID in assets/sxr/b-010c.sxr to replace (default: 1)",
     )
+    parser.add_argument("--debug-png", type=Path, default=None,
+                        help="Opt-in PNG replacement; test modes only (default target: 1-011b entity 92)")
+    parser.add_argument("--debug-png-bundle", default="1-011b")
+    parser.add_argument("--debug-png-entity", default="92")
     args = parser.parse_args()
 
     build_apk(
@@ -436,6 +481,9 @@ def main() -> None:
         ks_alias=args.ks_alias,
         debug_audio_path=args.debug_audio,
         debug_audio_entity=args.debug_audio_entity,
+        debug_png_path=args.debug_png,
+        debug_png_bundle=args.debug_png_bundle,
+        debug_png_entity=args.debug_png_entity,
     )
 
 
